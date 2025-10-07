@@ -95,7 +95,7 @@ function install_docker() {
     echo "Setting up Docker's APT repository..."
     apt-get update -y
     apt-get install -y ca-certificates curl
-    
+
     install -m 0755 -d /etc/apt/keyrings
     # Use -f to overwrite if file exists, ensures idempotency
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
@@ -107,11 +107,11 @@ function install_docker() {
       $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}") stable" | \
       tee /etc/apt/sources.list.d/docker.list > /dev/null
     apt-get update -y
-
+    
     # 3. Install Docker Engine
     echo "Installing Docker packages..."
     apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-
+    
     # 4. Verify installation and start service
     echo "Verifying Docker service status..."
     if ! systemctl is-active --quiet docker; then
@@ -121,7 +121,7 @@ function install_docker() {
     else
         echo "Docker service is already running."
     fi
-    
+
     echo "Current Docker status:"
     systemctl status docker --no-pager
     echo -e "${GREEN}--- Docker Installation Complete ---${NC}"
@@ -140,7 +140,7 @@ function install_dockge() {
         echo -e "${RED}Error: Docker daemon is not running. Please start Docker.${NC}"
         return 1
     fi
-    
+
     echo "Creating directories for stacks and Dockge configuration..."
     mkdir -p /opt/stacks /opt/dockge
 
@@ -149,12 +149,53 @@ function install_dockge() {
     curl -fsSL https://raw.githubusercontent.com/louislam/dockge/master/compose.yaml --output /opt/dockge/compose.yaml
 
     echo "Starting Dockge server via Docker Compose..."
-    # Use -f to specify the compose file path explicitly
+    # Use -f to specify the compose file path explicitly    
     docker compose -f /opt/dockge/compose.yaml up -d
 
     echo -e "\nDockge has been started successfully."
     echo -e "You should be able to access it at: ${YELLOW}http://<your-server-ip>:5001${NC}"
     echo -e "${GREEN}--- Dockge Installation Complete ---${NC}"
+}
+
+# --- Action: Install Tailscale ---
+function install_tailscale() {
+    echo -e "\n${GREEN}--- Starting Tailscale Installation ---${NC}"
+
+    # Check if Tailscale is already installed
+    if command -v tailscale &> /dev/null; then
+        echo -e "${YELLOW}Tailscale is already installed. Proceeding to connect...${NC}"
+    else
+        echo "Tailscale not found. Installing for Ubuntu 24.04 (Noble)..."
+        
+        # 1. Add Tailscale's GPG key and repository
+        echo "Adding Tailscale's repository..."
+        curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg | tee /usr/share/keyrings/tailscale-archive-keyring.gpg >/dev/null
+        curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.tailscale-keyring.list | tee /etc/apt/sources.list.d/tailscale.list
+
+        # 2. Install Tailscale
+        echo "Updating package list and installing Tailscale..."
+        apt-get update -y
+        apt-get install -y tailscale
+        echo -e "${GREEN}Tailscale package installed successfully.${NC}"
+    fi
+
+    # 3. Connect the machine to your Tailnet (interactive part)
+    echo -e "\n${YELLOW}---> ACTION REQUIRED <---${NC}"
+    echo "The next step will generate a URL to authenticate this server."
+    echo "Please copy the URL, paste it into a browser, and log in to your Tailscale account."
+    
+    # Run the command that prompts for authentication
+    tailscale up
+
+    # 4. Wait for user confirmation
+    echo ""
+    read -rp "After you have successfully authenticated in your browser, press [Enter] to continue..."
+
+    # 5. Print the Tailscale IP address
+    echo -e "\nFetching your Tailscale IP address..."
+    TS_IP=$(tailscale ip -4)
+    echo -e "Successfully connected! Your Tailscale IPv4 address is: ${YELLOW}${TS_IP}${NC}"
+    echo -e "${GREEN}--- Tailscale Setup Complete ---${NC}"
 }
 
 
@@ -164,8 +205,7 @@ function run_all_actions() {
     update_system
     setup_unattended_upgrades
     install_docker
-    # Note: Dockge installation is not included in "Run All" by default
-    # as it's a specific application. You can add install_dockge here if you wish.
+    # Note: Application installs are not included in "Run All" by default.
     echo -e "\n${YELLOW}===== ALL ACTIONS COMPLETED =====${NC}"
 }
 
@@ -187,6 +227,7 @@ function main_menu() {
         echo "3) Setup Unattended Upgrades"
         echo "4) Install Docker"
         echo "5) Install Dockge (Requires Docker)"
+        echo "6) Install/Connect Tailscale"
         echo "----------------------------------------"
         echo -e "${RED}q) Quit${NC}"
         echo "========================================"
@@ -207,6 +248,9 @@ function main_menu() {
                 ;;
             5)
                 install_dockge
+                ;;
+            6)
+                install_tailscale
                 ;;
             q|Q)
                 break
