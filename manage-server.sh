@@ -198,6 +198,73 @@ function install_tailscale() {
     echo -e "${GREEN}--- Tailscale Setup Complete ---${NC}"
 }
 
+# --- Helper function for updating a single Docker Compose application ---
+function perform_compose_update() {
+    local app_dir="$1"
+    local app_name
+    app_name=$(basename "${app_dir}")
+    
+    echo -e "\n${GREEN}--- Updating application: ${app_name} ---${NC}"
+    echo "Directory: ${app_dir}"
+
+    echo "Pulling latest images..."
+    docker compose --project-directory "${app_dir}" pull
+
+    echo "Recreating containers with new images..."
+    # --remove-orphans cleans up containers for services that no longer exist
+    docker compose --project-directory "${app_dir}" up -d --remove-orphans
+    
+    echo -e "${GREEN}--- Update for ${app_name} complete ---${NC}"
+}
+
+# --- Action: Update Docker Applications ---
+function update_docker_apps() {
+    echo -e "\n${GREEN}--- Update Docker Compose Applications ---${NC}"
+    
+    # Prerequisite check
+    if ! command -v docker &> /dev/null || ! docker info &> /dev/null; then
+        echo -e "${RED}Error: Docker is not installed or running. Please use Option 4 first.${NC}"; return 1;
+    fi
+
+    echo "Searching for running Docker Compose applications..."
+    
+    # Find all unique directories of running containers managed by docker-compose
+    # This works by inspecting each running container for the 'com.docker.compose.project.working_dir' label
+    local compose_dirs
+    mapfile -t compose_dirs < <(docker ps -q | xargs docker inspect --format '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' 2>/dev/null | grep -v '^$' | sort -u)
+
+    if [ ${#compose_dirs[@]} -eq 0 ]; then
+        echo -e "${YELLOW}No running Docker Compose applications found.${NC}"
+        return
+    fi
+    
+    echo "Found the following applications:"
+    local options=("Update All" "${compose_dirs[@]}" "Cancel")
+
+    # Present a dynamic menu to the user
+    select opt in "${options[@]}"; do
+        case $opt in
+            "Update All")
+                for dir in "${compose_dirs[@]}"; do
+                    perform_compose_update "${dir}"
+                done
+                break
+                ;;
+            "Cancel")
+                echo "Update cancelled."
+                break
+                ;;
+            *)
+                if [[ -n "$opt" ]]; then
+                    perform_compose_update "${opt}"
+                else
+                    echo -e "${RED}Invalid selection. Please try again.${NC}"
+                fi
+                break
+                ;;
+        esac
+    done
+}
 
 # --- Action: Run all actions ---
 function run_all_actions() {
@@ -225,40 +292,29 @@ function main_menu() {
         echo "----------------------------------------"
         echo "2) Update the System"
         echo "3) Setup Unattended Upgrades"
+        echo "----------------------------------------"
         echo "4) Install Docker"
         echo "5) Install Dockge (Requires Docker)"
-        echo "6) Install/Connect Tailscale"
+        echo "6) Update Docker Applications (Compose)"
+        echo "----------------------------------------"
+        echo "7) Install/Connect Tailscale"
         echo "----------------------------------------"
         echo -e "${RED}q) Quit${NC}"
         echo "========================================"
         read -rp "Enter your choice: " choice
 
         case $choice in
-            1)
-                run_all_actions
-                ;;
-            2)
-                update_system
-                ;;
-            3)
-                setup_unattended_upgrades
-                ;;
-            4)
-                install_docker
-                ;;
-            5)
-                install_dockge
-                ;;
-            6)
-                install_tailscale
-                ;;
-            q|Q)
-                break
-                ;;
-            *)
-                echo -e "\n${RED}Invalid option. Please try again.${NC}"
-                ;;
+            1) run_all_actions ;;
+            2) update_system ;;
+            3) setup_unattended_upgrades ;;
+            4) install_docker ;;
+            5) install_dockge ;;
+            6) update_docker_apps ;;
+            7) install_tailscale ;;
+            q|Q) break ;;
+            *) echo -e "\n${RED}Invalid option. Please try again.${NC}" ;;
         esac
+
 
         # Pause and wait for the user to press Enter before showing the menu again
         echo ""
