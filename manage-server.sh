@@ -127,12 +127,45 @@ function install_docker() {
     echo -e "${GREEN}--- Docker Installation Complete ---${NC}"
 }
 
+# --- Action: Install Dockge ---
+function install_dockge() {
+    echo -e "\n${GREEN}--- Starting Dockge Installation ---${NC}"
+
+    # Prerequisite check: Ensure Docker is installed and running
+    if ! command -v docker &> /dev/null; then
+        echo -e "${RED}Error: Docker is not installed. Please install Docker first (Option 4).${NC}"
+        return 1
+    fi
+    if ! docker info &> /dev/null; then
+        echo -e "${RED}Error: Docker daemon is not running. Please start Docker.${NC}"
+        return 1
+    fi
+    
+    echo "Creating directories for stacks and Dockge configuration..."
+    mkdir -p /opt/stacks /opt/dockge
+
+    echo "Downloading Dockge compose.yaml to /opt/dockge/..."
+    # Using full path for output is safer than using 'cd'
+    curl -fsSL https://raw.githubusercontent.com/louislam/dockge/master/compose.yaml --output /opt/dockge/compose.yaml
+
+    echo "Starting Dockge server via Docker Compose..."
+    # Use -f to specify the compose file path explicitly
+    docker compose -f /opt/dockge/compose.yaml up -d
+
+    echo -e "\nDockge has been started successfully."
+    echo -e "You should be able to access it at: ${YELLOW}http://<your-server-ip>:5001${NC}"
+    echo -e "${GREEN}--- Dockge Installation Complete ---${NC}"
+}
+
+
 # --- Action: Run all actions ---
 function run_all_actions() {
     echo -e "\n${YELLOW}===== RUNNING ALL ACTIONS =====${NC}"
     update_system
     setup_unattended_upgrades
     install_docker
+    # Note: Dockge installation is not included in "Run All" by default
+    # as it's a specific application. You can add install_dockge here if you wish.
     echo -e "\n${YELLOW}===== ALL ACTIONS COMPLETED =====${NC}"
 }
 
@@ -148,11 +181,12 @@ function main_menu() {
         echo "========================================"
         echo "      Ubuntu Server Management"
         echo "========================================"
-        echo -e "${YELLOW}1) Run All Actions${NC}"
+        echo -e "${YELLOW}1) Run All Actions (Update, Unattended Upgrades, Docker)${NC}"
         echo "----------------------------------------"
         echo "2) Update the System"
         echo "3) Setup Unattended Upgrades"
         echo "4) Install Docker"
+        echo "5) Install Dockge (Requires Docker)"
         echo "----------------------------------------"
         echo -e "${RED}q) Quit${NC}"
         echo "========================================"
@@ -170,6 +204,9 @@ function main_menu() {
                 ;;
             4)
                 install_docker
+                ;;
+            5)
+                install_dockge
                 ;;
             q|Q)
                 break

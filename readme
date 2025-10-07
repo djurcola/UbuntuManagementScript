@@ -1,5 +1,6 @@
 To run the script:
 
+wget https://raw.githubusercontent.com/djurcola/UbuntuManagementScript/refs/heads/master/manage-server.sh
 chmod +x manage-server.sh
 sudo ./manage-server.sh
 
