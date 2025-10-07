@@ -1,0 +1,51 @@
+To run the script:
+
+chmod +x manage-server.sh
+sudo ./manage-server.sh
+
+
+To extend the script:
+#Create a new function:
+# --- Action: Configure UFW Firewall ---
+function configure_firewall() {
+    echo -e "\n${GREEN}--- Configuring UFW Firewall ---${NC}"
+    apt-get install -y ufw
+    ufw default deny incoming
+    ufw default allow outgoing
+    ufw allow ssh
+    ufw allow http
+    ufw allow https
+    # Use 'y' to proceed without interactive confirmation
+    echo "y" | ufw enable
+    ufw status verbose
+    echo -e "${GREEN}--- UFW Firewall Configuration Complete ---${NC}"
+}
+
+# Add a new option to the main menu:
+# Inside the main_menu function's echo block...
+echo "4) Install Docker"
+echo "5) Configure Firewall (UFW)" # <-- Add this line
+echo "----------------------------------------"
+
+
+# Add a new case in the case statement to call your new function:
+# Inside the case statement in main_menu...
+    4)
+        install_docker
+        ;;
+    5) # <-- Add this new block
+        configure_firewall
+        ;;
+    q|Q)
+
+
+#(Optional) Add it to run_all_actions if you want it to be part of the "Run All" sequence:
+
+function run_all_actions() {
+    echo -e "\n${YELLOW}===== RUNNING ALL ACTIONS =====${NC}"
+    update_system
+    setup_unattended_upgrades
+    install_docker
+    configure_firewall # <-- Add this line
+    echo -e "\n${YELLOW}===== ALL ACTIONS COMPLETED =====${NC}"
+}
