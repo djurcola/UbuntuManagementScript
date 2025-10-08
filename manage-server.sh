@@ -319,20 +319,22 @@ function install_tailscale() {
 
     # 3. Connect the machine to your Tailnet (interactive part)
     echo -e "\n${YELLOW}---> ACTION REQUIRED <---${NC}"
-    echo "The next step will generate a URL to authenticate this server."
-    echo "Please copy the URL, paste it into a browser, and log in to your Tailscale account."
+    echo "The command below will generate a URL to authenticate this server."
+    echo "Please copy the URL, paste it into a browser, and log in."
+    echo -e "${YELLOW}The script will automatically continue after successful authentication.${NC}\n"
     
-    # Run the command that prompts for authentication
+    # Run the command and let IT handle the waiting. It will exit on its own
+    # once authentication is complete.
     tailscale up
 
-    # 4. Wait for user confirmation
-    echo ""
-    read -rp "After you have successfully authenticated in your browser, press [Enter] to continue..."
+    # THE LINE BELOW WAS THE PROBLEM AND HAS BEEN REMOVED.
+    # read -rp "After you have successfully authenticated in your browser, press [Enter] to continue..."
 
-    # 5. Print the Tailscale IP address
-    echo -e "\nFetching your Tailscale IP address..."
+    # 4. By the time the script reaches here, authentication is complete.
+    echo -e "\n${GREEN}Authentication successful!${NC}"
+    echo "Fetching your Tailscale IP address..."
     TS_IP=$(tailscale ip -4)
-    echo -e "Successfully connected! Your Tailscale IPv4 address is: ${YELLOW}${TS_IP}${NC}"
+    echo -e "Your Tailscale IPv4 address is: ${YELLOW}${TS_IP}${NC}"
     echo -e "${GREEN}--- Tailscale Setup Complete ---${NC}"
 }
 
