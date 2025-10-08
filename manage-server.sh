@@ -157,6 +157,58 @@ function install_dockge() {
     echo -e "${GREEN}--- Dockge Installation Complete ---${NC}"
 }
 
+# --- Action: Update Dockge ---
+function update_dockge() {
+    echo -e "\n${GREEN}--- Updating Dockge ---${NC}"
+    local DOCKGE_DIR="/opt/dockge"
+    local DOCKGE_COMPOSE_FILE="${DOCKGE_DIR}/compose.yaml"
+
+    # Prerequisite check
+    if ! command -v docker &> /dev/null || ! docker info &> /dev/null; then
+        echo -e "${RED}Error: Docker is not installed or running.${NC}"; return 1;
+    fi
+    if [ ! -f "${DOCKGE_COMPOSE_FILE}" ]; then
+        echo -e "${RED}Error: Dockge compose file not found at '${DOCKGE_COMPOSE_FILE}'. Is Dockge installed?${NC}"; return 1;
+    fi
+
+    echo "Pulling the latest Dockge image..."
+    # Use --project-directory for safety; it avoids 'cd'
+    docker compose --project-directory "${DOCKGE_DIR}" pull
+
+    echo "Recreating the Dockge container with the new image..."
+    docker compose --project-directory "${DOCKGE_DIR}" up -d
+    
+    echo -e "${GREEN}--- Dockge update complete ---${NC}"
+    echo -e "${YELLOW}Note: Old images may still exist. You can clean them up using the 'Docker System Prune' option.${NC}"
+}
+
+# --- Action: Docker System Prune ---
+function docker_system_prune() {
+    echo -e "\n${GREEN}--- Docker System Prune ---${NC}"
+    
+    if ! command -v docker &> /dev/null || ! docker info &> /dev/null; then
+        echo -e "${RED}Error: Docker is not installed or running.${NC}"; return 1;
+    fi
+
+    echo -e "${YELLOW}This will remove all unused Docker data, including:"
+    echo "  - All stopped containers"
+    echo "  - All networks not used by at least one container"
+    echo "  - All build cache"
+    echo "  - All dangling images (and optionally all unused images)"
+    echo -e "${NC}"
+    read -rp "Do you want to remove ALL unused images (not just dangling ones)? This is more thorough. [y/N]: " prune_all
+    
+    if [[ "$prune_all" =~ ^[Yy]$ ]]; then
+        echo "Pruning all unused images and other data..."
+        docker system prune -a -f
+    else
+        echo "Pruning dangling images and other data..."
+        docker system prune -f
+    fi
+    
+    echo -e "${GREEN}--- Docker prune complete ---${NC}"
+}
+
 # --- Action: Install Tailscale ---
 function install_tailscale() {
     echo -e "\n${GREEN}--- Starting Tailscale Installation ---${NC}"
@@ -288,16 +340,21 @@ function main_menu() {
         echo "========================================"
         echo "      Ubuntu Server Management"
         echo "========================================"
+        echo -e "  --- System & Maintenance ---"
         echo -e "${YELLOW}1) Run All Actions (Update, Unattended Upgrades, Docker)${NC}"
         echo "----------------------------------------"
         echo "2) Update the System"
         echo "3) Setup Unattended Upgrades"
-        echo "----------------------------------------"
+        echo ""
+        echo "  --- Docker Management ---"
         echo "4) Install Docker"
         echo "5) Install Dockge (Requires Docker)"
-        echo "6) Update Docker Applications (Compose)"
-        echo "----------------------------------------"
-        echo "7) Install/Connect Tailscale"
+        echo "6) Update Dockge"
+        echo "7) Update Other Docker Apps (Compose)"
+        echo "8) Docker System Prune (Cleanup)"
+        echo ""
+        echo "  --- Network Tools ---"
+        echo "9) Install/Connect Tailscale"
         echo "----------------------------------------"
         echo -e "${RED}q) Quit${NC}"
         echo "========================================"
@@ -309,8 +366,10 @@ function main_menu() {
             3) setup_unattended_upgrades ;;
             4) install_docker ;;
             5) install_dockge ;;
-            6) update_docker_apps ;;
-            7) install_tailscale ;;
+            6) update_dockge ;;
+            7) update_docker_apps ;;
+            8) docker_system_prune ;;
+            9) install_tailscale ;;
             q|Q) break ;;
             *) echo -e "\n${RED}Invalid option. Please try again.${NC}" ;;
         esac
