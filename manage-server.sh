@@ -76,6 +76,92 @@ function setup_unattended_upgrades() {
     echo -e "${GREEN}--- Unattended Upgrades Setup Complete ---${NC}"
 }
 
+# --- Action: Setup a new user ---
+function setup_new_user() {
+    echo -e "\n${GREEN}--- Setup a New User ---${NC}"
+
+    read -rp "Enter the new username: " username
+    if id -u "${username}" &>/dev/null; then
+        echo -e "${RED}Error: User '${username}' already exists.${NC}"; return 1;
+    fi
+
+    local password password_confirm
+    while true; do
+        read -s -p "Enter password for ${username}: " password
+        echo
+        read -s -p "Confirm password: " password_confirm
+        echo
+        if [[ "$password" == "$password_confirm" ]] && [[ -n "$password" ]]; then
+            break
+        elif [[ -z "$password" ]]; then
+            echo -e "${RED}Password cannot be empty. Please try again.${NC}"
+        else
+            echo -e "${RED}Passwords do not match. Please try again.${NC}"
+        fi
+    done
+
+    echo "Creating user '${username}'..."
+    adduser --disabled-password --gecos "" "${username}"
+    echo "${username}:${password}" | chpasswd
+    echo "Password set for '${username}'."
+
+    echo "Adding user to 'sudo' group..."
+    usermod -aG sudo "${username}"
+
+    if getent group docker > /dev/null; then
+        echo "Adding user to 'docker' group..."
+        usermod -aG docker "${username}"
+    else
+        echo -e "${YELLOW}Docker group not found. Skipping.${NC}"
+    fi
+
+    echo -e "${GREEN}--- User '${username}' created successfully ---${NC}"
+    echo "User can log in via SSH with their password."
+}
+
+# --- Action: Install SSH Public Key ---
+function add_ssh_key() {
+    echo -e "\n${GREEN}--- Add SSH Public Key ---${NC}"
+    
+    local target_user
+    # Prefer the user who invoked sudo, otherwise prompt.
+    if [[ -n "${SUDO_USER-}" ]]; then
+        target_user="${SUDO_USER}"
+        echo "Detected script was run with sudo by user: ${YELLOW}${target_user}${NC}"
+    else
+        read -rp "Enter the username to add the SSH key for: " target_user
+    fi
+
+    if ! id "${target_user}" &>/dev/null; then
+        echo -e "${RED}Error: User '${target_user}' does not exist.${NC}"; return 1;
+    fi
+
+    local user_home; user_home=$(eval echo ~"${target_user}")
+    local ssh_dir="${user_home}/.ssh"
+    local auth_keys_file="${ssh_dir}/authorized_keys"
+
+    echo "Please paste the public SSH key (e.g., from id_rsa.pub) and press [Enter]:"
+    read -rp "Public Key: " public_key
+
+    if ! [[ "$public_key" =~ ^ssh-(rsa|ed25519|dss|ecdsa) ]]; then
+        echo -e "${RED}Error: Invalid public key format. It should start with 'ssh-rsa', 'ssh-ed25519', etc.${NC}"; return 1;
+    fi
+
+    echo "Creating directory ${ssh_dir} if it doesn't exist..."
+    mkdir -p "${ssh_dir}"
+    
+    echo "Adding key to ${auth_keys_file}..."
+    echo "${public_key}" >> "${auth_keys_file}"
+
+    echo "Setting secure permissions..."
+    chmod 700 "${ssh_dir}"
+    chmod 600 "${auth_keys_file}"
+    # Ensure correct ownership, especially if run as root
+    chown -R "${target_user}":"${target_user}" "${ssh_dir}"
+
+    echo -e "${GREEN}--- SSH key added successfully for ${target_user} ---${NC}"
+}
+
 # --- Action: Install Docker ---
 function install_docker() {
     echo -e "\n${GREEN}--- Starting Docker Installation ---${NC}"
@@ -343,20 +429,24 @@ function main_menu() {
         echo -e "  --- System & Maintenance ---"
         echo -e "${YELLOW}1) Run All Actions (Update, Unattended Upgrades, Docker)${NC}"
         echo "----------------------------------------"
-        echo "2) Update the System"
-        echo "3) Setup Unattended Upgrades"
+        echo " 2) Update the System"
+        echo " 3) Setup Unattended Upgrades"
+        echo ""
+        echo "  --- User & Security Management ---"
+        echo " 4) Setup a New User"
+        echo " 5) Add SSH Public Key for a User"
         echo ""
         echo "  --- Docker Management ---"
-        echo "4) Install Docker"
-        echo "5) Install Dockge (Requires Docker)"
-        echo "6) Update Dockge"
-        echo "7) Update Other Docker Apps (Compose)"
-        echo "8) Docker System Prune (Cleanup)"
+        echo " 6) Install Docker"
+        echo " 7) Install Dockge"
+        echo " 8) Update Dockge"
+        echo " 9) Update Other Docker Apps (Compose)"
+        echo "10) Docker System Prune (Cleanup)"
         echo ""
         echo "  --- Network Tools ---"
-        echo "9) Install/Connect Tailscale"
+        echo "11) Install/Connect Tailscale"
         echo "----------------------------------------"
-        echo -e "${RED}q) Quit${NC}"
+        echo -e "${RED} q) Quit${NC}"
         echo "========================================"
         read -rp "Enter your choice: " choice
 
@@ -364,12 +454,14 @@ function main_menu() {
             1) run_all_actions ;;
             2) update_system ;;
             3) setup_unattended_upgrades ;;
-            4) install_docker ;;
-            5) install_dockge ;;
-            6) update_dockge ;;
-            7) update_docker_apps ;;
-            8) docker_system_prune ;;
-            9) install_tailscale ;;
+            4) setup_new_user ;;
+            5) add_ssh_key ;;
+            6) install_docker ;;
+            7) install_dockge ;;
+            8) update_dockge ;;
+            9) update_docker_apps ;;
+            10) docker_system_prune ;;
+            11) install_tailscale ;;
             q|Q) break ;;
             *) echo -e "\n${RED}Invalid option. Please try again.${NC}" ;;
         esac
