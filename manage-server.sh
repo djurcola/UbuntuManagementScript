@@ -162,6 +162,52 @@ function add_ssh_key() {
     echo -e "${GREEN}--- SSH key added successfully for ${target_user} ---${NC}"
 }
 
+# --- Action: Disable SSH Password Login ---
+function disable_ssh_password_login() {
+    echo -e "\n${YELLOW}--- WARNING: HIGHLY DESTRUCTIVE ACTION ---${NC}"
+    echo "This action will disable all password-based SSH logins."
+    echo "Ensure you have successfully logged in with a working SSH key BEFORE proceeding."
+    echo -e "${RED}If you proceed without a key, YOU WILL BE PERMANENTLY LOCKED OUT of your server.${NC}"
+    read -rp "Are you absolutely sure you want to continue? [y/N]: " confirm
+
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        echo "Operation cancelled."
+        return
+    fi
+
+    local sshd_config_file="/etc/ssh/sshd_config"
+    local backup_file="${sshd_config_file}.bak.$(date +%F-%T)"
+
+    echo "Backing up ${sshd_config_file} to ${backup_file}..."
+    cp "${sshd_config_file}" "${backup_file}"
+
+    echo "Disabling password authentication..."
+    # This sed command finds the line (even if commented out) and replaces it.
+    if grep -qE "^#?\s*PasswordAuthentication" "${sshd_config_file}"; then
+        sed -i -E 's/^#?\s*PasswordAuthentication\s+.*/PasswordAuthentication no/' "${sshd_config_file}"
+    else
+        # If the line doesn't exist at all, append it.
+        echo "" >> "${sshd_config_file}"
+        echo "PasswordAuthentication no" >> "${sshd_config_file}"
+    fi
+    
+    echo "Validating SSH configuration syntax..."
+    if sshd -t; then
+        echo -e "${GREEN}Syntax OK.${NC}"
+    else
+        echo -e "${RED}SSH configuration syntax error detected!${NC}"
+        echo "Restoring backup file to prevent SSH lockout."
+        cp "${backup_file}" "${sshd_config_file}"
+        echo "Operation aborted. SSH service was not restarted."
+        return 1
+    fi
+
+    echo "Restarting SSH service to apply changes..."
+    systemctl restart sshd
+
+    echo -e "${GREEN}--- Password authentication for SSH has been disabled successfully ---${NC}"
+}
+
 # --- Action: Install Docker ---
 function install_docker() {
     echo -e "\n${GREEN}--- Starting Docker Installation ---${NC}"
@@ -437,16 +483,17 @@ function main_menu() {
         echo "  --- User & Security Management ---"
         echo " 4) Setup a New User"
         echo " 5) Add SSH Public Key for a User"
+        echo -e "${RED} 6) Disable SSH Password Login${NC}"
         echo ""
         echo "  --- Docker Management ---"
-        echo " 6) Install Docker"
-        echo " 7) Install Dockge"
-        echo " 8) Update Dockge"
-        echo " 9) Update Other Docker Apps (Compose)"
-        echo "10) Docker System Prune (Cleanup)"
+        echo " 7) Install Docker"
+        echo " 8) Install Dockge"
+        echo " 9) Update Dockge"
+        echo "10) Update Other Docker Apps (Compose)"
+        echo "11) Docker System Prune (Cleanup)"
         echo ""
         echo "  --- Network Tools ---"
-        echo "11) Install/Connect Tailscale"
+        echo "12) Install/Connect Tailscale"
         echo "----------------------------------------"
         echo -e "${RED} q) Quit${NC}"
         echo "========================================"
@@ -458,12 +505,13 @@ function main_menu() {
             3) setup_unattended_upgrades ;;
             4) setup_new_user ;;
             5) add_ssh_key ;;
-            6) install_docker ;;
-            7) install_dockge ;;
-            8) update_dockge ;;
-            9) update_docker_apps ;;
-            10) docker_system_prune ;;
-            11) install_tailscale ;;
+            6) disable_ssh_password_login ;;
+            7) install_docker ;;
+            8) install_dockge ;;
+            9) update_dockge ;;
+            10) update_docker_apps ;;
+            11) docker_system_prune ;;
+            12) install_tailscale ;;
             q|Q) break ;;
             *) echo -e "\n${RED}Invalid option. Please try again.${NC}" ;;
         esac
