@@ -384,6 +384,37 @@ function install_tailscale() {
     echo -e "${GREEN}--- Tailscale Setup Complete ---${NC}"
 }
 
+# --- Action: Update Maxmind DB ---
+function update_maxmind_db() {
+    echo -e "\n${GREEN}--- Updating Maxmind GeoLite2 Country Database ---${NC}"
+
+    local PANGOLIN_DIR="/home/dan/docker/pangolin"
+    local DOWNLOAD_PATH="${PANGOLIN_DIR}/GeoLite2-Country.tar.gz"
+    local DB_URL="https://github.com/GitSquared/node-geolite2-redist/raw/refs/heads/master/redist/GeoLite2-Country.tar.gz"
+    local CONFIG_DIR="${PANGOLIN_DIR}/config"
+
+    echo "Downloading the GeoLite2 Country database..."
+    # Ensure the target directory exists
+    mkdir -p "${PANGOLIN_DIR}"
+    curl -L -o "${DOWNLOAD_PATH}" "${DB_URL}"
+
+    echo "Extracting the database..."
+    # Use -C to extract to a specific directory to avoid clutter
+    tar -xzf "${DOWNLOAD_PATH}" -C "${PANGOLIN_DIR}"
+
+    echo "Moving the .mmdb file to the config directory: ${CONFIG_DIR}"
+    # Ensure the config directory exists
+    mkdir -p "${CONFIG_DIR}"
+    # The glob will expand to the extracted directory name
+    mv ${PANGOLIN_DIR}/GeoLite2-Country_*/*.mmdb "${CONFIG_DIR}/"
+
+    echo "Cleaning up downloaded and temporary files..."
+    rm -f "${DOWNLOAD_PATH}"
+    rm -rf ${PANGOLIN_DIR}/GeoLite2-Country_*
+
+    echo -e "${GREEN}--- Maxmind Database Update Complete ---${NC}"
+}
+
 # --- Helper function for updating a single Docker Compose application ---
 function perform_compose_update() {
     local app_dir="$1"
@@ -494,6 +525,7 @@ function main_menu() {
         echo ""
         echo "  --- Network Tools ---"
         echo "12) Install/Connect Tailscale"
+        echo "13) Update Maxmind DB"
         echo "----------------------------------------"
         echo -e "${RED} q) Quit${NC}"
         echo "========================================"
@@ -512,6 +544,7 @@ function main_menu() {
             10) update_docker_apps ;;
             11) docker_system_prune ;;
             12) install_tailscale ;;
+            13) update_maxmind_db ;;
             q|Q) break ;;
             *) echo -e "\n${RED}Invalid option. Please try again.${NC}" ;;
         esac
