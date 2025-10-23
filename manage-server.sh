@@ -415,6 +415,16 @@ function update_maxmind_db() {
     echo -e "${GREEN}--- Maxmind Database Update Complete ---${NC}"
 }
 
+# --- Action: Update Newt Service Manager ---
+function update_newt_service_manager() {
+    echo -e "\n${GREEN}--- Updating Newt Service Manager ---${NC}"
+    echo "Running the Newt Service Manager update script..."
+    # This command downloads and executes the update script.
+    # The script itself will handle its output.
+    curl -sL https://raw.githubusercontent.com/dpurnam/scripts/main/newt/newt-service-manager.sh | sudo bash
+    echo -e "${GREEN}--- Newt Service Manager update process finished ---${NC}"
+}
+
 # --- Helper function for updating a single Docker Compose application ---
 function perform_compose_update() {
     local app_dir="$1"
@@ -526,6 +536,9 @@ function main_menu() {
         echo "  --- Network Tools ---"
         echo "12) Install/Connect Tailscale"
         echo "13) Update Maxmind DB"
+        echo ""
+        echo "  --- Service Management ---"
+        echo "14) Update Newt Service Manager"
         echo "----------------------------------------"
         echo -e "${RED} q) Quit${NC}"
         echo "========================================"
@@ -545,6 +558,7 @@ function main_menu() {
             11) docker_system_prune ;;
             12) install_tailscale ;;
             13) update_maxmind_db ;;
+            14) update_newt_service_manager ;;
             q|Q) break ;;
             *) echo -e "\n${RED}Invalid option. Please try again.${NC}" ;;
         esac
