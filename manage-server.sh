@@ -136,7 +136,12 @@ function add_ssh_key() {
         echo -e "${RED}Error: User '${target_user}' does not exist.${NC}"; return 1;
     fi
 
-    local user_home; user_home=$(eval echo ~"${target_user}")
+    # Resolve the user's home directory safely (avoid eval)
+    local user_home
+    user_home=$(getent passwd "${target_user}" | cut -d: -f6)
+    if [[ -z "${user_home}" ]]; then
+        echo -e "${RED}Error: Could not determine home directory for '${target_user}'.${NC}"; return 1;
+    fi
     local ssh_dir="${user_home}/.ssh"
     local auth_keys_file="${ssh_dir}/authorized_keys"
 
@@ -160,6 +165,47 @@ function add_ssh_key() {
     chown -R "${target_user}":"${target_user}" "${ssh_dir}"
 
     echo -e "${GREEN}--- SSH key added successfully for ${target_user} ---${NC}"
+}
+
+# --- Action: Add the current user to the docker group (no sudo required for docker) ---
+function add_current_user_to_docker_group() {
+    echo -e "\n${GREEN}--- Add Current User to Docker Group ---${NC}"
+
+    # This script runs as root; prefer the user who invoked sudo.
+    local target_user
+    if [[ -n "${SUDO_USER-}" && "${SUDO_USER}" != "root" ]]; then
+        target_user="${SUDO_USER}"
+    else
+        # Fallback: try to infer from login; otherwise ask.
+        target_user=$(logname 2>/dev/null || true)
+        if [[ -z "${target_user}" || "${target_user}" == "root" ]]; then
+            read -rp "Enter the username to add to the docker group: " target_user
+        fi
+    fi
+
+    if ! id "${target_user}" &>/dev/null; then
+        echo -e "${RED}Error: User '${target_user}' does not exist.${NC}"; return 1;
+    fi
+
+    if ! getent group docker >/dev/null; then
+        echo -e "${RED}Error: 'docker' group does not exist.${NC}"
+        echo -e "${YELLOW}Install Docker first (menu option: Install Docker) and then try again.${NC}"
+        return 1
+    fi
+
+    if id -nG "${target_user}" | grep -qw docker; then
+        echo -e "${YELLOW}User '${target_user}' is already in the 'docker' group. Nothing to do.${NC}"
+        return 0
+    fi
+
+    echo "Adding '${target_user}' to the 'docker' group..."
+    usermod -aG docker "${target_user}"
+
+    echo -e "${GREEN}Done.${NC}"
+    echo -e "${YELLOW}Important:${NC} group membership updates require a new login session."
+    echo "- Log out and log back in (recommended), OR"
+    echo "- Run: newgrp docker"
+    echo "Then you should be able to run: docker ps (without sudo)"
 }
 
 # --- Action: Disable SSH Password Login ---
@@ -528,17 +574,18 @@ function main_menu() {
         echo ""
         echo "  --- Docker Management ---"
         echo " 7) Install Docker"
-        echo " 8) Install Dockge"
-        echo " 9) Update Dockge"
-        echo "10) Update Other Docker Apps (Compose)"
-        echo "11) Docker System Prune (Cleanup)"
+        echo " 8) Add Current User to Docker Group (no sudo for docker)"
+        echo " 9) Install Dockge"
+        echo "10) Update Dockge"
+        echo "11) Update Other Docker Apps (Compose)"
+        echo "12) Docker System Prune (Cleanup)"
         echo ""
         echo "  --- Network Tools ---"
-        echo "12) Install/Connect Tailscale"
-        echo "13) Update Maxmind DB"
+        echo "13) Install/Connect Tailscale"
+        echo "14) Update Maxmind DB"
         echo ""
         echo "  --- Service Management ---"
-        echo "14) Update Newt Service Manager"
+        echo "15) Update Newt Service Manager"
         echo "----------------------------------------"
         echo -e "${RED} q) Quit${NC}"
         echo "========================================"
@@ -552,13 +599,14 @@ function main_menu() {
             5) add_ssh_key ;;
             6) disable_ssh_password_login ;;
             7) install_docker ;;
-            8) install_dockge ;;
-            9) update_dockge ;;
-            10) update_docker_apps ;;
-            11) docker_system_prune ;;
-            12) install_tailscale ;;
-            13) update_maxmind_db ;;
-            14) update_newt_service_manager ;;
+            8) add_current_user_to_docker_group ;;
+            9) install_dockge ;;
+            10) update_dockge ;;
+            11) update_docker_apps ;;
+            12) docker_system_prune ;;
+            13) install_tailscale ;;
+            14) update_maxmind_db ;;
+            15) update_newt_service_manager ;;
             q|Q) break ;;
             *) echo -e "\n${RED}Invalid option. Please try again.${NC}" ;;
         esac
