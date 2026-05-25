@@ -45,15 +45,15 @@ fi
 function update_system() {
     echo -e "\n${GREEN}--- Starting System Update ---${NC}"
     echo "Updating package lists..."
-    apt-get update -y
+    DEBIAN_FRONTEND=noninteractive apt-get update -y
     
     echo "Upgrading installed packages..."
     # Use DEBIAN_FRONTEND to avoid interactive prompts during upgrade
     DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
     
     echo "Cleaning up unused packages..."
-    apt-get autoremove -y
-    apt-get clean
+    DEBIAN_FRONTEND=noninteractive apt-get autoremove -y
+    DEBIAN_FRONTEND=noninteractive apt-get clean
     echo -e "${GREEN}--- System Update Complete ---${NC}"
 }
 
@@ -61,10 +61,10 @@ function update_system() {
 function setup_unattended_upgrades() {
     echo -e "\n${GREEN}--- Setting Up Unattended Upgrades ---${NC}"
     echo "Updating package lists..."
-    apt-get update -y
+    DEBIAN_FRONTEND=noninteractive apt-get update -y
     
     echo "Installing unattended-upgrades package..."
-    apt-get install -y unattended-upgrades
+    DEBIAN_FRONTEND=noninteractive apt-get install -y unattended-upgrades
     
     echo "Configuring unattended-upgrades to run automatically..."
     # The DEBIAN_FRONTEND variable prevents the configuration dialog from appearing
@@ -148,8 +148,8 @@ function add_ssh_key() {
     echo "Please paste the public SSH key (e.g., from id_rsa.pub) and press [Enter]:"
     read -rp "Public Key: " public_key
 
-    if ! [[ "$public_key" =~ ^ssh-(rsa|ed25519|dss|ecdsa) ]]; then
-        echo -e "${RED}Error: Invalid public key format. It should start with 'ssh-rsa', 'ssh-ed25519', etc.${NC}"; return 1;
+    if ! [[ "$public_key" =~ ^(ssh-(rsa|ed25519|dss|ecdsa)|sk-ssh-ed25519@openssh.com|sk-ecdsa-sha2-nistp256@openssh.com) ]]; then
+        echo -e "${RED}Error: Invalid public key format. It should start with 'ssh-rsa', 'ssh-ed25519', 'sk-ssh-ed25519@openssh.com', etc.${NC}"; return 1;
     fi
 
     echo "Creating directory ${ssh_dir} if it doesn't exist..."
@@ -258,21 +258,38 @@ function disable_ssh_password_login() {
 function install_docker() {
     echo -e "\n${GREEN}--- Starting Docker Installation ---${NC}"
 
+    # Check if Docker is already installed and running
+    if command -v docker &> /dev/null && docker info &> /dev/null; then
+        echo -e "${YELLOW}Docker is already installed and running.${NC}"
+        echo "Current Docker version: $(docker --version)"
+        read -rp "Do you want to re-run the installation anyway? [y/N]: " reinstall
+        if [[ ! "$reinstall" =~ ^[Yy]$ ]]; then
+            echo "Skipping Docker installation."
+            return 0
+        fi
+    fi
+
     # 1. Remove conflicting packages
     echo "Removing any conflicting old Docker packages..."
+    local packages_to_remove=()
     for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc; do
         if dpkg -l | grep -q -w "$pkg"; then
-            apt-get remove -y "$pkg"
-        else
-            echo "Package $pkg not found, skipping."
+            packages_to_remove+=("$pkg")
         fi
     done
-    apt-get autoremove -y
+    
+    if [ ${#packages_to_remove[@]} -gt 0 ]; then
+        echo "Removing installed conflicting packages: ${packages_to_remove[*]}"
+        DEBIAN_FRONTEND=noninteractive apt-get remove -y "${packages_to_remove[@]}"
+    else
+        echo "No conflicting packages found."
+    fi
+    DEBIAN_FRONTEND=noninteractive apt-get autoremove -y
 
     # 2. Setup Docker's APT Repository
     echo "Setting up Docker's APT repository..."
-    apt-get update -y
-    apt-get install -y ca-certificates curl
+    DEBIAN_FRONTEND=noninteractive apt-get update -y
+    DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl
 
     install -m 0755 -d /etc/apt/keyrings
     # Use -f to overwrite if file exists, ensures idempotency
@@ -284,11 +301,11 @@ function install_docker() {
       "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
       $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}") stable" | \
       tee /etc/apt/sources.list.d/docker.list > /dev/null
-    apt-get update -y
+    DEBIAN_FRONTEND=noninteractive apt-get update -y
     
     # 3. Install Docker Engine
     echo "Installing Docker packages..."
-    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
     
     # 4. Verify installation and start service
     echo "Verifying Docker service status..."
@@ -298,6 +315,13 @@ function install_docker() {
         systemctl enable docker
     else
         echo "Docker service is already running."
+    fi
+
+    echo "Running post-installation test..."
+    if docker run --rm hello-world &> /dev/null; then
+        echo -e "${GREEN}Docker post-installation test passed successfully.${NC}"
+    else
+        echo -e "${YELLOW}Warning: Docker post-installation test failed. You may need to troubleshoot.${NC}"
     fi
 
     echo "Current Docker status:"
@@ -395,17 +419,19 @@ function install_tailscale() {
     if command -v tailscale &> /dev/null; then
         echo -e "${YELLOW}Tailscale is already installed. Proceeding to connect...${NC}"
     else
-        echo "Tailscale not found. Installing for Ubuntu 24.04 (Noble)..."
+        local ubuntu_codename
+        ubuntu_codename=$(lsb_release -cs 2>/dev/null || . /etc/os-release && echo "$VERSION_CODENAME")
+        echo "Tailscale not found. Installing for Ubuntu (${ubuntu_codename})..."
         
         # 1. Add Tailscale's GPG key and repository
         echo "Adding Tailscale's repository..."
-        curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg | tee /usr/share/keyrings/tailscale-archive-keyring.gpg >/dev/null
-        curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.tailscale-keyring.list | tee /etc/apt/sources.list.d/tailscale.list
+        curl -fsSL "https://pkgs.tailscale.com/stable/ubuntu/${ubuntu_codename}.noarmor.gpg" | tee /usr/share/keyrings/tailscale-archive-keyring.gpg >/dev/null
+        curl -fsSL "https://pkgs.tailscale.com/stable/ubuntu/${ubuntu_codename}.tailscale-keyring.list" | tee /etc/apt/sources.list.d/tailscale.list
 
         # 2. Install Tailscale
         echo "Updating package list and installing Tailscale..."
-        apt-get update -y
-        apt-get install -y tailscale
+        DEBIAN_FRONTEND=noninteractive apt-get update -y
+        DEBIAN_FRONTEND=noninteractive apt-get install -y tailscale
         echo -e "${GREEN}Tailscale package installed successfully.${NC}"
     fi
 
@@ -451,12 +477,12 @@ function update_maxmind_db() {
     echo "Moving the .mmdb file to the config directory: ${CONFIG_DIR}"
     # Ensure the config directory exists
     mkdir -p "${CONFIG_DIR}"
-    # The glob will expand to the extracted directory name
-    mv ${PANGOLIN_DIR}/GeoLite2-Country_*/*.mmdb "${CONFIG_DIR}/"
+    # Use find to safely locate the .mmdb file and move it
+    find "${PANGOLIN_DIR}" -maxdepth 2 -name "*.mmdb" -type f -exec mv {} "${CONFIG_DIR}/" \;
 
     echo "Cleaning up downloaded and temporary files..."
     rm -f "${DOWNLOAD_PATH}"
-    rm -rf ${PANGOLIN_DIR}/GeoLite2-Country_*
+    rm -rf "${PANGOLIN_DIR}"/GeoLite2-Country_*
 
     echo -e "${GREEN}--- Maxmind Database Update Complete ---${NC}"
 }
@@ -464,10 +490,16 @@ function update_maxmind_db() {
 # --- Action: Update Newt Service Manager ---
 function update_newt_service_manager() {
     echo -e "\n${GREEN}--- Updating Newt Service Manager ---${NC}"
-    echo "Running the Newt Service Manager update script..."
-    # This command downloads and executes the update script.
-    # The script itself will handle its output.
-    curl -sL https://raw.githubusercontent.com/dpurnam/scripts/main/newt/newt-service-manager.sh | sudo bash
+    echo "Downloading the Newt Service Manager update script..."
+    
+    local temp_script
+    temp_script=$(mktemp)
+    curl -fsSL https://raw.githubusercontent.com/dpurnam/scripts/main/newt/newt-service-manager.sh -o "${temp_script}"
+    
+    echo "Executing the update script..."
+    bash "${temp_script}"
+    rm -f "${temp_script}"
+    
     echo -e "${GREEN}--- Newt Service Manager update process finished ---${NC}"
 }
 
@@ -504,7 +536,15 @@ function update_docker_apps() {
     # Find all unique directories of running containers managed by docker-compose
     # This works by inspecting each running container for the 'com.docker.compose.project.working_dir' label
     local compose_dirs
-    mapfile -t compose_dirs < <(docker ps -q | xargs docker inspect --format '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' 2>/dev/null | grep -v '^$' | sort -u)
+    local container_ids
+    container_ids=$(docker ps -q)
+    
+    if [[ -z "$container_ids" ]]; then
+        echo -e "${YELLOW}No running Docker Compose applications found.${NC}"
+        return
+    fi
+    
+    mapfile -t compose_dirs < <(echo "$container_ids" | xargs docker inspect --format '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' 2>/dev/null | grep -v '^$' | sort -u)
 
     if [ ${#compose_dirs[@]} -eq 0 ]; then
         echo -e "${YELLOW}No running Docker Compose applications found.${NC}"
